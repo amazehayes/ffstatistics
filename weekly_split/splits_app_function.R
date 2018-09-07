@@ -142,17 +142,40 @@ weekly_split <- function(df_raw, player_pos_name, measure_vars, year_filter,
 	df_player$in_split <- ## zero out the mis-matches (these are out of split values)
 		na.is.zero(df_player$in_split)
 	
+	if(length(measure_vars) > 1){
+		res <- ## create initial result - take means and totals, project ppr points
+			df_player %>%
+			group_by(in_split) %>%
+			summarize_at(.vars = measure_vars,
+							 .funs = c(mean="mean")) %>% #, total="sum")) %>%
+			mutate_at(.funs = funs(projection = .*16), 
+						 .vars = vars(paste0(measure_vars, "_mean"))) %>%
+			mutate(player = player_pos_name)
+	} else {
+		res <- ## create initial result - take means and totals, project ppr points
+			df_player %>%
+			group_by(in_split) %>%
+			summarize_at(.vars = measure_vars,
+							 .funs = c(mean="mean")) %>% #, total="sum")) %>%
+			mutate_at(.funs = funs(projection = .*16), 
+						 .vars = vars("mean")) %>%
+			mutate(player = player_pos_name)
+		res[, paste0(measure_vars, "_mean")] <- res$mean
+		res[, paste0(measure_vars, '_mean_projection')] <- res$projection
+		#res[, paste0(measure_vars, "_total")] <- res$sum
+		res$mean <- NULL
+		res$projection <- NULL
+	}
 	
-	res <- ## create initial result - take means and totals, project ppr points
-		df_player %>%
-		group_by(in_split) %>%
-		summarize_at(.vars = measure_vars,
-						 .funs = c(mean="mean", total="sum")) %>%
-		mutate_at(.funs = funs(projection = .*16), 
-					 .vars = vars(paste0(measure_vars, "_mean"))) %>%
-		mutate(player = player_pos_name)
+	## need to account for variables that don't need to be projected ie rams and tms
+	for(i in c('rams' ,'tms')){
+		if(i %in% measure_vars){
+			res[, paste0(i, '_mean_projection')] <-
+				res[, paste0(i, '_mean')]
+		}
+	}
 	
-	df_count <- ## data frame of total games -- can't figure out how to add this to the above...
+	df_count <- ## data frame of total games 
 		df_player %>%
 		group_by(in_split) %>%
 		summarize(games = n())
@@ -160,49 +183,51 @@ weekly_split <- function(df_raw, player_pos_name, measure_vars, year_filter,
 	res <- ## merge in total games 
 		merge(res, df_count, by = 'in_split', all.x = TRUE)
 	
-	## Rank the projected ppr values 
-	pos <- ## get player position
-		unlist(strsplit(player_pos_name, ',', fixed = TRUE))[2]
 	
-	pos <- ## make sure we're getting the correct values 
-		substr(pos, nchar(pos)-1, nchar(pos))
+	## Rank the projected ppr values if ppr_mean_projection exists
+	if('ppr_mean_projection' %in% names(res)){
+		
+		pos <- ## get player position
+			unlist(strsplit(player_pos_name, ',', fixed = TRUE))[2]
+		
+		pos <- ## make sure we're getting the correct values 
+			substr(pos, nchar(pos)-1, nchar(pos))
+		
+		df_posrank <- ## calculate position rank for in/out split of projected points 
+			df %>%
+			filter(year == posrank_year, 
+					 position == pos, 
+					 week %in% c(1:16)) %>%
+			group_by(player_pos) %>%
+			summarize(ppr_total = sum(ppr)) %>%
+			mutate(
+				ppr_total_in_split_1 = ifelse(
+					player_pos == player_pos_name,
+					res$ppr_mean_projection[res$in_split == 1],
+					ppr_total),
+				ppr_total_in_split_0 = ifelse(
+					player_pos == player_pos_name,
+					res$ppr_mean_projection[res$in_split == 0],
+					ppr_total),
+				pos_rank_in_split_1 = dense_rank(-ppr_total_in_split_1),
+				pos_rank_in_split_0 = dense_rank(-ppr_total_in_split_0)
+			) %>%
+			filter(player_pos==player_pos_name) %>%
+			select(pos_rank_in_split_1, pos_rank_in_split_0) 
 	
-	df_posrank <- ## calculate position rank for in/out split of projected points 
-		df %>%
-		filter(year == posrank_year, 
-				 position == pos, 
-				 week %in% c(1:16)) %>%
-		group_by(player_pos) %>%
-		summarize(ppr_total = sum(ppr)) %>%
-		mutate(
-			ppr_total_in_split_1 = ifelse(
-				player_pos == player_pos_name,
-				res$ppr_mean_projection[res$in_split == 1],
-				ppr_total),
-			ppr_total_in_split_0 = ifelse(
-				player_pos == player_pos_name,
-				res$ppr_mean_projection[res$in_split == 0],
-				ppr_total),
-			pos_rank_in_split_1 = dense_rank(-ppr_total_in_split_1),
-			pos_rank_in_split_0 = dense_rank(-ppr_total_in_split_0)
-		) %>%
-		filter(player_pos==player_pos_name) %>%
-		select(pos_rank_in_split_1, pos_rank_in_split_0) 
-	
-	
-	
-	df_posrank <- ## transpose df_posrank and turn into dataframe
-		data.frame(t(df_posrank))
-	
-	names(df_posrank) <- ## rename df_posrank
-		'posrank_projection'
-	
-	df_posrank$in_split <- ## create split column for df_posrank based on names
-		ifelse(row.names(df_posrank) == 'pos_rank_in_split_1', 1, 0)
-	
-	res <- ## merge df_posrank with res and we're done! 
-		merge(res, df_posrank, by = 'in_split', all.x = TRUE) 
-	
+		df_posrank <- ## transpose df_posrank and turn into dataframe
+			data.frame(t(df_posrank))
+		
+		names(df_posrank) <- ## rename df_posrank
+			'posrank_projection'
+		
+		df_posrank$in_split <- ## create split column for df_posrank based on names
+			ifelse(row.names(df_posrank) == 'pos_rank_in_split_1', 1, 0)
+		
+		res <- ## merge df_posrank with res and we're done! 
+			merge(res, df_posrank, by = 'in_split', all.x = TRUE) 	
+	}
+
 	## fill in gaps for missing data 
 	if(1 %nin% unique(res$in_split)){
 		temp <- 
@@ -290,7 +315,7 @@ player_pos_name <- ## player to look at - aka primary player
 	'Marvin Jones, WR'
 
 measure_vars <- ## variables to aggregate -- you can add any metrics from the data to this vector
-	c('ppr', 'receptions', 'rectds', 'targets', 'recyards')
+	c('ppr', 'tms')#,'receptions', 'rectds', 'targets', 'recyards')
 
 year_filter <- ## year filter on data
 	c(2017:2017)
