@@ -184,50 +184,61 @@ weekly_split <- function(df_raw, player_pos_name, measure_vars, year_filter,
 		merge(res, df_count, by = 'in_split', all.x = TRUE)
 	
 	
+	## scoring to rank c('ppr', 'halfppr', 'standard', 'fourpttd', 'sixpttd')
+	## 
 	## Rank the projected ppr values if ppr_mean_projection exists
-	if('ppr_mean_projection' %in% names(res)){
-		
+	posrankvars <-
+		c('ppr', 'halfppr', 'standard', 'fourpttd', 'sixpttd')
+	
+	for(i in intersect(posrankvars, measure_vars)){
 		pos <- ## get player position
 			unlist(strsplit(player_pos_name, ',', fixed = TRUE))[2]
 		
 		pos <- ## make sure we're getting the correct values 
 			substr(pos, nchar(pos)-1, nchar(pos))
 		
+		i_mean_proj <-
+			paste0(i, "_mean_projection")
+		
+		df$points <-
+			df[, i]
+		
 		df_posrank <- ## calculate position rank for in/out split of projected points 
 			df %>%
-			filter(year == posrank_year, 
+			filter(year == 2017, 
 					 position == pos, 
 					 week %in% c(1:16)) %>%
 			group_by(player_pos) %>%
-			summarize(ppr_total = sum(ppr)) %>%
+			summarize(total_points = sum(points)) %>%
 			mutate(
-				ppr_total_in_split_1 = ifelse(
+				total_in_split_1 = unlist(ifelse(
 					player_pos == player_pos_name,
-					res$ppr_mean_projection[res$in_split == 1],
-					ppr_total),
-				ppr_total_in_split_0 = ifelse(
+					res[res$in_split == 1, i_mean_proj],
+					total_points)),
+				total_in_split_0 = unlist(ifelse(
 					player_pos == player_pos_name,
-					res$ppr_mean_projection[res$in_split == 0],
-					ppr_total),
-				pos_rank_in_split_1 = dense_rank(-ppr_total_in_split_1),
-				pos_rank_in_split_0 = dense_rank(-ppr_total_in_split_0)
+					res[res$in_split == 0, i_mean_proj],
+					total_points)),
+				pos_rank_in_split_1 = dense_rank(-total_in_split_1),
+				pos_rank_in_split_0 = dense_rank(-total_in_split_0)
 			) %>%
 			filter(player_pos==player_pos_name) %>%
 			select(pos_rank_in_split_1, pos_rank_in_split_0) 
-	
+		
 		df_posrank <- ## transpose df_posrank and turn into dataframe
 			data.frame(t(df_posrank))
 		
 		names(df_posrank) <- ## rename df_posrank
-			'posrank_projection'
+			paste0(i, '_posrank_projection')
 		
 		df_posrank$in_split <- ## create split column for df_posrank based on names
 			ifelse(row.names(df_posrank) == 'pos_rank_in_split_1', 1, 0)
 		
 		res <- ## merge df_posrank with res and we're done! 
-			merge(res, df_posrank, by = 'in_split', all.x = TRUE) 	
+			merge(res, df_posrank, by = 'in_split', all.x = TRUE) 
+		
 	}
-
+	
 	## fill in gaps for missing data 
 	if(1 %nin% unique(res$in_split)){
 		temp <- 
@@ -258,6 +269,10 @@ weekly_split <- function(df_raw, player_pos_name, measure_vars, year_filter,
 		res <-
 			rbind(res, temp)
 	}
+	
+	res <-
+		res %>%
+		mutate_if(is.numeric, round, 2)
 	
 	## transpose data frame for easy display if TRUE
 	if(transpose_output){
@@ -315,7 +330,7 @@ player_pos_name <- ## player to look at - aka primary player
 	'Marvin Jones, WR'
 
 measure_vars <- ## variables to aggregate -- you can add any metrics from the data to this vector
-	c('ppr', 'tms')#,'receptions', 'rectds', 'targets', 'recyards')
+	c('ppr', 'standard', 'tms')#,'receptions', 'rectds', 'targets', 'recyards')
 
 year_filter <- ## year filter on data
 	c(2017:2017)
