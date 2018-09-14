@@ -52,8 +52,8 @@ df_raw <-
 
 
 player_pos_name <- ## player to look at - aka primary player
-   #'Chris Hogan, WR'
-   'Marvin Jones, WR'
+   'Chris Hogan, WR'
+   #'Marvin Jones, WR'
 
 year_filter <- ## year filter on data -- only one value allowed
    c(2017)
