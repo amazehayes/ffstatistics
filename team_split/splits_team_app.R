@@ -52,16 +52,14 @@ df_raw <-
 
 
 player_pos_name <- ## player to look at - aka primary player
-   'Chris Hogan, WR'
-   #'Marvin Jones, WR'
+   #'Chris Hogan, WR'
+   'Marvin Jones, WR'
 
-year_filter <- ## year filter on data
-   c(2017:2017)
-
-#week_split <-
-#   c(1:17)
+year_filter <- ## year filter on data -- only one value allowed
+   c(2017)
 
 
+## data processing 
 df <- 
    clean_names(df_raw) %>%
    mutate(player_pos = paste(player, position, sep = ', '),
@@ -143,6 +141,7 @@ names(positional_split_touches) <-
 		  )
 	)
 
+## merge everythign together and create ms metrics
 positional_split <-
 	merge(positional_split_targets, positional_split_touches, by = 'in_split', all = TRUE)
 
@@ -168,6 +167,37 @@ res <-
 			 ) %>%
 	mutate_if(is.numeric, round, 2)
 
+
+## ensure we have an in split and out of split
+if(1 %nin% unique(res$in_split)){
+	temp <- 
+		res
+	
+	temp$in_split <- 
+		1
+	
+	temp[, setdiff(names(temp), 'in_split')] <- 
+		0 
+	
+	res <-
+		rbind(res, temp)
+}
+
+## fill in gaps for missing data 
+
+if(0 %nin% unique(res$in_split)){
+	temp <- 
+		res
+	
+	temp$in_split <- 
+		0
+	
+	temp[, setdiff(names(temp), 'in_split')] <- 
+		0 
+	
+	res <-
+		rbind(res, temp)
+}
 
 
 ## transpose data frame for easy table use
