@@ -41,11 +41,7 @@ filter <-
 select <-
 	dplyr::select
 
-
 summarize <- 
-	dplyr::summarize
-
-summarise_all <-
 	dplyr::summarize
 
 count <- 
@@ -54,7 +50,8 @@ count <-
 gather <-
 	tidyr::gather
 
-
+spread <-
+	tidyr::spread
 
 ## Main function definition, baby!! #####################
 weekly_split <- function(df_raw, player_pos_name, measure_vars, year_filter, 
