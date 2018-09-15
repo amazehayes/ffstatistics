@@ -3,6 +3,7 @@ options(stringsAsFactors = FALSE)
 library(httr)
 library(Hmisc)
 library(jsonlite)
+library(tidyr)
 library(dplyr)
 
 ## quick function defs  ###########
@@ -33,6 +34,25 @@ na.is.zero <-
 		
 	}
 
+
+filter <-
+	dplyr::filter
+
+select <-
+	dplyr::select
+
+
+summarize <- 
+	dplyr::summarize
+
+summarise_all <-
+	dplyr::summarize
+
+count <- 
+	dplyr::count
+
+gather <-
+	tidyr::gather
 
 
 
@@ -191,6 +211,7 @@ weekly_split <- function(df_raw, player_pos_name, measure_vars, year_filter,
 		c('ppr', 'halfppr', 'standard', 'fourpttd', 'sixpttd')
 	
 	for(i in intersect(posrankvars, measure_vars)){
+		# i <- 'ppr'
 		pos <- ## get player position
 			unlist(strsplit(player_pos_name, ',', fixed = TRUE))[2]
 		
@@ -204,27 +225,26 @@ weekly_split <- function(df_raw, player_pos_name, measure_vars, year_filter,
 			df[, i]
 		
 		df_posrank <- ## calculate position rank for in/out split of projected points 
-			df %>%
-			filter(year == 2017, 
+			df %>% ## fitler down to year, position, and not player 
+			filter(year == posrank_year, 
 					 position == pos, 
-					 week %in% c(1:16)) %>%
-			group_by(player_pos) %>%
-			summarize(total_points = sum(points)) %>%
+					 week %in% c(1:16),
+					 player_pos %nin% c(player_pos_name)) %>%
+			group_by(player_pos) %>% ## group by sum points 
+			summarize(total_in_split_1 = sum(points),
+						 total_in_split_0 = sum(points)) %>% ## bind player projected pts
+			bind_rows(
+				data.frame(player_pos = player_pos_name,
+							  total_in_split_1 = res[res$in_split==1, i_mean_proj],
+							  total_in_split_0 = res[res$in_split==0, i_mean_proj]
+							  )
+				) %>% ## add in rank columns
 			mutate(
-				total_in_split_1 = unlist(ifelse(
-					player_pos == player_pos_name,
-					res[res$in_split == 1, i_mean_proj],
-					total_points)),
-				total_in_split_0 = unlist(ifelse(
-					player_pos == player_pos_name,
-					res[res$in_split == 0, i_mean_proj],
-					total_points)),
 				pos_rank_in_split_1 = dense_rank(-total_in_split_1),
-				pos_rank_in_split_0 = dense_rank(-total_in_split_0)
-			) %>%
-			filter(player_pos==player_pos_name) %>%
+				pos_rank_in_split_0 = dense_rank(-total_in_split_0)) %>%
+			filter(player_pos==player_pos_name) %>% ## filter down to player and select columns
 			select(pos_rank_in_split_1, pos_rank_in_split_0) 
-		
+	
 		df_posrank <- ## transpose df_posrank and turn into dataframe
 			data.frame(t(df_posrank))
 		
@@ -328,6 +348,7 @@ df_raw <-
 
 player_pos_name <- ## player to look at - aka primary player
 	'Marvin Jones, WR'
+	#'Kerryon Johnson, RB'
 
 measure_vars <- ## variables to aggregate -- you can add any metrics from the data to this vector
 	c('ppr', 'standard', 'tms')#,'receptions', 'rectds', 'targets', 'recyards')
