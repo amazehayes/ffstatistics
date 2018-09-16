@@ -202,6 +202,17 @@ weekly_split <- function(df_raw, player_pos_name, measure_vars, year_filter,
 	
 	
 	## fill in gaps for missing data 
+	if(nrow(res) == 0){
+		res <-
+			na.is.zero(
+				res %>%
+					bind_rows(
+						data.frame(in_split = c(0,1))
+						)
+				)
+	}
+	
+	
 	if(1 %nin% unique(res$in_split)){
 		temp <- 
 			res
@@ -347,8 +358,8 @@ df_raw <-
 ## definingg function inputs 
 
 player_pos_name <- ## player to look at - aka primary player
-	'Marvin Jones, WR'
-	#'Kerryon Johnson, RB'
+	#'Marvin Jones, WR'
+	'Kerryon Johnson, RB'
 
 measure_vars <- ## variables to aggregate -- you can add any metrics from the data to this vector
 	c('ppr', 'standard', 'tms')#,'receptions', 'rectds', 'targets', 'recyards')
