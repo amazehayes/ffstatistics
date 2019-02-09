@@ -531,19 +531,42 @@ ExtractPlays <- function(url) {
     # extract data for each play
     playdata <- trim(xpathSApply(tree, paste0("//article[contains(@class, 'play-by-play')]/descendant::div[@id='gamepackage-drives-wrap']/ul[contains(@class, 'css-accordion')]/li[contains(@class, 'accordion-item')][", i, "]/descendant::ul[contains(@class, 'drive-list')]/li[not(contains(@class, 'half-time')) and not(contains(@class, 'end-quarter'))]/p/span[contains(@class, 'post-play')]"), xmlValue))
     down.dist <- trim(xpathSApply(tree, paste0("//article[contains(@class, 'play-by-play')]/descendant::div[@id='gamepackage-drives-wrap']/ul[contains(@class, 'css-accordion')]/li[contains(@class, 'accordion-item')][", i, "]/descendant::ul[contains(@class, 'drive-list')]/li[not(contains(@class, 'half-time')) and not(contains(@class, 'end-quarter'))]/h3"), xmlValue))
-
+    
     # get the gametime out of the "post-play" code
     plays1 <- as.data.frame(t(sapply(playdata, function(x) regex(postplay.regex, x))))
-
+    plays2 <- as.data.frame(t(sapply(down.dist, function(x) regex(playmeta.regex, x))))
+    
     # adjust the data objects
     colnames(plays1) <- c('OT', 'min', 'sec', 'quarter', 'pbp')
     rownames(plays1) <- NULL
     
-    plays <- as.data.frame(plays1$pbp)
-    plays$pbp <- as.character(plays$pbp)
+    colnames(plays2) <- c('down', 'togo', 'field', 'yardline')
+    rownames(plays2) <- NULL
+    
+    # adjust the types of each column
+    plays <- as.data.frame(cbind(plays2, pbp=plays1$pbp))
+    plays <- within(plays, {down <- as.character(down);
+    field <- as.character(field);
+    yardline <- as.integer(yardline);
+    pbp <- as.character(pbp)})
     plays1 <- within(plays1, {min <- as.integer(min);
     sec <- as.integer(sec);
     quarter <- as.character(quarter)})
+    
+    #################################
+    # How far from the end zone did the play begin?
+    
+    # Figure out which side of the field the play began from
+    offense_unlike <- ifelse(!is.na(plays$field), adist(off, plays$field, costs=costs, ignore.case=TRUE), NA)
+    defense_unlike <- ifelse(!is.na(plays$field), adist(def, plays$field, costs=costs, ignore.case=TRUE), NA)
+    
+    #Now compute the distance from the goal line:
+    plays$dist <- ifelse(plays$yardline == 50, 50, ifelse(!is.na(plays$field), ifelse(offense_unlike < defense_unlike, 100 - plays$yardline, plays$yardline), NA))
+    
+    #Replace 'goal' to go with the distance to the goal line:
+    indx <- !is.na(plays$togo) & (substr(plays$togo, 1, 1) == 'g' | substr(plays$togo,1,1) == 'G')
+    plays$togo[indx] <- plays$dist[indx]
+    plays$togo <- as.numeric(plays$togo)
     
     ##########################
     # convert all times to seconds
@@ -593,7 +616,6 @@ ExtractPlays <- function(url) {
   
   list(drives=drives, meta=meta)
 }
-
 parse.down.dist <- function(url){
   
   tree <- htmlTreeParse(url, isURL=TRUE, useInternalNodes=TRUE)
@@ -655,45 +677,7 @@ parse.down.dist <- function(url){
     playdata <- trim(xpathSApply(tree, paste0("//article[contains(@class, 'play-by-play')]/descendant::div[@id='gamepackage-drives-wrap']/ul[contains(@class, 'css-accordion')]/li[contains(@class, 'accordion-item')][", i, "]/descendant::ul[contains(@class, 'drive-list')]/li[not(contains(@class, 'half-time')) and not(contains(@class, 'end-quarter'))]/p/span[contains(@class, 'post-play')]"), xmlValue))
     down.dist <- trim(xpathSApply(tree, paste0("//article[contains(@class, 'play-by-play')]/descendant::div[@id='gamepackage-drives-wrap']/ul[contains(@class, 'css-accordion')]/li[contains(@class, 'accordion-item')][", i, "]/descendant::ul[contains(@class, 'drive-list')]/li[not(contains(@class, 'half-time')) and not(contains(@class, 'end-quarter'))]/h3"), xmlValue))
     down.dist2 <- c(down.dist2,down.dist)
-    # get the gametime out of the "post-play" code
-    plays1 <- as.data.frame(t(sapply(playdata, function(x) regex(postplay.regex, x))))
     
-    
-    # adjust the data objects
-    colnames(plays1) <- c('OT', 'min', 'sec', 'quarter', 'pbp')
-    rownames(plays1) <- NULL
-    
-    this.drive <- list(plays=plays)
-    
-    ####################
-    # metadata for the drive
-    this.drive$half <- ifelse(i < halftime[1], 1, 2)
-    if (i > 1) { drives[[length(drives)]]$duration <- drives[[length(drives)]]$plays$time[1] - plays$time[1] }
-    
-    # get the home and away scores during this drive
-    if (i == 1) {
-      this.drive$plays$score.home <- this.drive$home.score <- 0
-      this.drive$plays$score.away <- this.drive$away.score <- 0
-    } else {
-      this.drive$plays$score.home <- this.drive$home.score <- drive.score.home[which(indx.drives == i) - 1]
-      this.drive$plays$score.away <- this.drive$away.score <- drive.score.away[which(indx.drives == i) - 1]
-    }
-    
-    # attach metadata to the play table
-    this.drive$plays$half <- this.drive$half
-    this.drive$plays$poss <- off
-    this.drive$plays$def <- def
-    this.drive$plays$home <- home.abbrev
-    this.drive$plays$away <- away.abbrev
-    if (poss[1] == away.id) { this.drive$plays$score.offense <- this.drive$away.score; this.drive$plays$score.defense <- this.drive$home.score; }
-    if (poss[1] == home.id) { this.drive$plays$score.defense <- this.drive$away.score; this.drive$plays$score.offense <- this.drive$home.score; }
-    this.drive$plays$playnum <- 1:nrow(plays)
-    this.drive$plays$drive <- which(indx.drives == i)
-    
-    rownames(this.drive$plays) <- NULL
-    
-    # add this drive to the list
-    drives[[length(drives) + 1]] <- this.drive
   }
   
   return(down.dist2)
